@@ -1,0 +1,375 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.chat-page {
+  width: 100%;
+  height: 100%;
+  background: white;
+  position: fixed;
+  top: 0;
+  left: 0;
+  font-family: 'AscenderSansW01-Regular', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+
+.chat-page::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    repeating-linear-gradient(
+      30deg,
+      transparent,
+      transparent 35px,
+      rgba(160, 160, 160, 0.2) 35px,
+      rgba(160, 160, 160, 0.2) 36px
+    ),
+    repeating-linear-gradient(
+      -30deg,
+      transparent,
+      transparent 40px,
+      rgba(160, 160, 160, 0.18) 40px,
+      rgba(160, 160, 160, 0.18) 41px
+    );
+  background-attachment: fixed;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.chat-page::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse 60% 50% at 50% 45%, transparent 20%, white 70%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.chat-page > * {
+  position: relative;
+  z-index: 2;
+}
+
+.version-label {
+  position: fixed;
+  left: 40px;
+  top: 40px;
+  color: #8F8F8F;
+  font-size: 16px;
+  font-weight: 400;
+  z-index: 10;
+}
+
+.content-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 20px;
+  position: relative;
+}
+
+.upper-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 60px;
+}
+
+.tagline {
+  color: black;
+  font-size: 38px;
+  font-weight: 400;
+  text-align: center;
+  margin-bottom: 30px;
+  white-space: nowrap;
+}
+
+.examples-container {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 0 20px;
+  max-width: 100%;
+  transition: all 0.3s ease;
+}
+
+.button-row {
+  display: flex;
+  gap: 15px;
+  flex-wrap: nowrap;
+}
+
+.example-button {
+  padding: 8px 18px;
+  background: white;
+  border: 1px solid #D0D0D0;
+  border-radius: 16px;
+  box-shadow: 0px 2px 12px rgba(0, 0, 0, 0.08);
+  color: black;
+  font-size: 16px;
+  font-family: 'AscenderSansW01-Regular', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  outline: none;
+}
+
+.example-button:hover {
+  background: #f5f5f5;
+  border-color: #888;
+  transform: translateY(-1px);
+  box-shadow: 0px 3px 16px rgba(0, 0, 0, 0.1);
+}
+
+.example-button:focus {
+  outline: none;
+  border-color: #888;
+}
+
+.example-button:active {
+  transform: translateY(0) scale(0.97);
+  background: #e8e8e8;
+  box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.08);
+  transition: all 0.05s ease;
+}
+
+.prompt-container {
+  width: calc(100% - 40px);
+  max-width: 650px;
+  display: flex;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.prompt-wrapper {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+}
+
+.prompt-input {
+  width: 100%;
+  min-height: 50px;
+  padding: 16px 60px 16px 26px;
+  background: white;
+  border: 1px solid #D0D0D0;
+  border-radius: 32px;
+  box-shadow: 0px 2px 12px rgba(0, 0, 0, 0.08);
+  color: black;
+  font-size: 16px;
+  font-family: 'AscenderSansW01-Regular', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 400;
+  line-height: 1.5;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  display: block;
+}
+
+.prompt-input:focus {
+  border-color: #888;
+  box-shadow: 0px 3px 16px rgba(0, 0, 0, 0.1);
+  outline: none;
+}
+
+.prompt-input::placeholder {
+  color: #8F8F8F;
+}
+
+.send-button {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  margin-top: -16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: #8F8F8F;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: none;
+  outline: none;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.send-button.has-text {
+  background: black;
+  color: white;
+}
+
+.send-button:not(.has-text) {
+  pointer-events: none;
+  cursor: default;
+}
+
+.send-button:active {
+  opacity: 0.7;
+}
+
+.send-button:focus {
+  outline: none;
+}
+
+/* Responsive adjustments - wrap content but keep sizes */
+@media (max-width: 1100px) {
+  .examples-container {
+    max-width: 600px;
+  }
+}
+
+@media (max-width: 900px) {
+  .tagline {
+    white-space: normal;
+    padding: 0 20px;
+  }
+}
+/* Test Popup Styles */
+.test-popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.test-popup {
+  background: white;
+  border-radius: 12px;
+  max-width: 90%;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0px 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.test-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.test-popup-header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-family: 'AscenderSansW01-Regular', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 32px;
+  cursor: pointer;
+  color: #666;
+  line-height: 1;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-button:hover {
+  color: #000;
+}
+
+.test-popup-content {
+  padding: 20px;
+}
+
+.test-section {
+  margin-bottom: 30px;
+}
+
+.test-section:last-child {
+  margin-bottom: 0;
+}
+
+.test-section h3 {
+  margin: 0 0 10px 0;
+  font-size: 18px;
+  font-family: 'AscenderSansW01-Regular', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #333;
+}
+
+.test-section p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  font-family: 'AscenderSansW01-Regular', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #666;
+  padding: 12px;
+  background: #f5f5f5;
+  border-radius: 8px;
+}
+
+.test-section img {
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  display: block;
+}
+
+/* Instruction Page */
+.instruction-page {
+  width: 100%;
+  height: 100%;
+  background: white;
+  position: fixed;
+  top: 0;
+  left: 0;
+  font-family: 'AscenderSansW01-Regular', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+
+.instruction-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.instruction-text {
+  font-size: 16px;
+  line-height: 1.5;
+  color: #1a1a1a;
+  text-align: center;
+  max-width: 600px;
+}

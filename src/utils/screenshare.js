@@ -1,0 +1,466 @@
+import { create } from "zustand";
+
+export const useScreenShare = create((set, get) => {
+  let changeDetectionTimer = null;
+  let previousImageData = null;
+  let temporaryPauseTimer = null;
+
+  const imagePixelSize = 1_300_000;
+  const imageSizeForChangeDetection = 800_000;
+
+  return {
+    stream: null,
+    isSharing: false,
+    isRequestingScreenShare: false,
+    changeDetectionEnabled: false,
+    isChangeDetectionPaused: false,
+    isAnalyzingScreenChange: false,
+    pipDetailsGetter: null,
+    setPipDetailsGetter: (getter) => set({ pipDetailsGetter: getter }),
+    pipCloseCallback: null,
+    setPipCloseCallback: (callback) => set({ pipCloseCallback: callback }),
+    setIsAnalyzingScreenChange: (value) =>
+      set({ isAnalyzingScreenChange: value }),
+
+    requestScreenShare: async () => {
+      set({ isRequestingScreenShare: true });
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: "monitor",
+            width: 1920,
+            height: 1080,
+          },
+          audio: false,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 150));
+
+        get().startSharing(stream);
+        return true;
+      } catch (error) {
+        console.error("Error sharing screen:", error);
+        return false;
+      } finally {
+        set({ isRequestingScreenShare: false });
+      }
+    },
+
+    startSharing: (stream) => {
+      stream.getVideoTracks()[0].addEventListener("ended", () => {
+        get().stopSharing();
+      });
+
+      set({ stream, isSharing: true });
+    },
+
+    stopSharing: () => {
+      const { stream, pipCloseCallback } = get();
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+
+      // Clean up change detection
+      get().stopChangeDetection();
+
+      pipCloseCallback?.();
+
+      set({ stream: null, isSharing: false });
+    },
+
+    captureImageFromStream: (options) => {
+      return new Promise((resolve, reject) => {
+        const { stream } = get();
+
+        if (!stream) {
+          resolve({ scaledImageDataUrl: "", nonScaledImageDataUrl: "" });
+          return;
+        }
+
+        const video = document.createElement("video");
+        video.srcObject = stream;
+        video.autoplay = true;
+        video.muted = true;
+        video.style.display = "none";
+        document.body.appendChild(video);
+
+        if (options?.whiteout) {
+          const overlay = document.createElement("div");
+          overlay.id = "screenshare-whiteout-overlay";
+          overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: hsl(var(--background));
+            z-index: 999999;
+            pointer-events: none;
+          `;
+          document.body.appendChild(overlay);
+        }
+
+        video.onloadedmetadata = () => {
+          video.play();
+
+          setTimeout(() => {
+            const maxPixels =
+              options?.size === "sm"
+                ? 800_000
+                : options?.isLocalLlm
+                ? 1_000_000
+                : imagePixelSize;
+
+            const { width, height } = getScaledDimensions(
+              video.videoWidth,
+              video.videoHeight,
+              maxPixels
+            );
+
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            if (!ctx) {
+              reject(new Error("Could not get canvas context"));
+              return;
+            }
+
+            ctx.drawImage(video, 0, 0, width, height);
+
+            const scaledImageDataUrl = canvas.toDataURL("image/jpeg");
+
+            const nonScaledCanvas = document.createElement("canvas");
+            nonScaledCanvas.width = video.videoWidth;
+            nonScaledCanvas.height = video.videoHeight;
+            const nonScaledCtx = nonScaledCanvas.getContext("2d", {
+              willReadFrequently: true,
+            });
+
+            let nonScaledImageDataUrl = "";
+            if (nonScaledCtx) {
+              nonScaledCtx.drawImage(
+                video,
+                0,
+                0,
+                video.videoWidth,
+                video.videoHeight
+              );
+              nonScaledImageDataUrl = nonScaledCanvas.toDataURL("image/jpeg");
+            }
+
+            if (options?.whiteout) {
+              const overlay = document.getElementById(
+                "screenshare-whiteout-overlay"
+              );
+              if (overlay) {
+                overlay.remove();
+              }
+            }
+
+            video.pause();
+            video.srcObject = null;
+            video.remove();
+
+            resolve({ scaledImageDataUrl, nonScaledImageDataUrl });
+          }, 100);
+        };
+
+        video.onerror = () => {
+          video.remove();
+          reject(new Error("Error loading video"));
+        };
+      });
+    },
+
+    startChangeDetection: (callback, options = {}) => {
+      const {
+        threshold = 0.8,
+        checkIntervalMs = 200,
+        scaleFactor = 0.2,
+        captureDelayMs = 300,
+      } = options;
+
+      const { stream } = get();
+      if (!stream) return;
+
+      // Stop any existing detection
+      get().stopChangeDetection();
+
+      set({ changeDetectionEnabled: true, isChangeDetectionPaused: false });
+
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.muted = true;
+      video.style.display = "none";
+      document.body.appendChild(video);
+
+      video.onloadedmetadata = () => {
+        video.play();
+
+        const runDetection = () => {
+          const { isChangeDetectionPaused, changeDetectionEnabled } = get();
+
+          if (!changeDetectionEnabled) return;
+
+          if (isChangeDetectionPaused) {
+            changeDetectionTimer = setTimeout(runDetection, checkIntervalMs);
+            return;
+          }
+
+          const canvas = document.createElement("canvas");
+          const width = Math.floor(video.videoWidth * scaleFactor);
+          const height = Math.floor(video.videoHeight * scaleFactor);
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          if (!ctx) {
+            changeDetectionTimer = setTimeout(runDetection, checkIntervalMs);
+            return;
+          }
+
+          ctx.drawImage(video, 0, 0, width, height);
+
+          const currentImageData = ctx.getImageData(0, 0, width, height);
+
+          let changeDetected = false;
+
+          if (previousImageData) {
+            const changePercent = calculateImageDifference(
+              previousImageData,
+              currentImageData
+            );
+
+            if (changePercent >= threshold) {
+              changeDetected = true;
+            }
+          }
+
+          if (changeDetected) {
+            set({ isAnalyzingScreenChange: true });
+            changeDetectionTimer = setTimeout(() => {
+              const { width: captureWidth, height: captureHeight } =
+                getScaledDimensions(
+                  video.videoWidth,
+                  video.videoHeight,
+                  imageSizeForChangeDetection
+                );
+
+              const captureCanvas = document.createElement("canvas");
+              captureCanvas.width = captureWidth;
+              captureCanvas.height = captureHeight;
+
+              const captureCtx = captureCanvas.getContext("2d", {
+                willReadFrequently: true,
+              });
+
+              if (captureCtx) {
+                captureCtx.drawImage(video, 0, 0, captureWidth, captureHeight);
+
+                const scaledImageDataUrl =
+                  captureCanvas.toDataURL("image/jpeg");
+
+                const nonScaledCanvas = document.createElement("canvas");
+                nonScaledCanvas.width = video.videoWidth;
+                nonScaledCanvas.height = video.videoHeight;
+                const nonScaledCtx = nonScaledCanvas.getContext("2d", {
+                  willReadFrequently: true,
+                });
+
+                let nonScaledImageDataUrl = "";
+                if (nonScaledCtx) {
+                  nonScaledCtx.drawImage(
+                    video,
+                    0,
+                    0,
+                    video.videoWidth,
+                    video.videoHeight
+                  );
+                  nonScaledImageDataUrl =
+                    nonScaledCanvas.toDataURL("image/jpeg");
+                }
+
+                callback(scaledImageDataUrl, nonScaledImageDataUrl);
+              }
+
+              const resetCanvas = document.createElement("canvas");
+              resetCanvas.width = width;
+              resetCanvas.height = height;
+              const resetCtx = resetCanvas.getContext("2d", {
+                willReadFrequently: true,
+              });
+              if (resetCtx) {
+                resetCtx.drawImage(video, 0, 0, width, height);
+                const newSmallData = resetCtx.getImageData(0, 0, width, height);
+                previousImageData = newSmallData;
+              }
+
+              changeDetectionTimer = setTimeout(runDetection, captureDelayMs);
+            }, captureDelayMs);
+
+            return;
+          }
+
+          previousImageData = currentImageData;
+          changeDetectionTimer = setTimeout(runDetection, checkIntervalMs);
+        };
+
+        changeDetectionTimer = setTimeout(runDetection, checkIntervalMs);
+      };
+    },
+
+    stopChangeDetection: () => {
+      if (changeDetectionTimer) {
+        clearTimeout(changeDetectionTimer);
+        changeDetectionTimer = null;
+      }
+      previousImageData = null;
+
+      set({ changeDetectionEnabled: false, isChangeDetectionPaused: false });
+
+      const videos = document.querySelectorAll('video[style*="display: none"]');
+      videos.forEach((v) => v.remove());
+    },
+
+    pauseChangeDetection: () => {
+      const { changeDetectionEnabled } = get();
+      if (!changeDetectionEnabled) return;
+
+      set({ isChangeDetectionPaused: true });
+    },
+
+    resumeChangeDetection: () => {
+      const { changeDetectionEnabled } = get();
+      if (!changeDetectionEnabled) return;
+
+      set({ isChangeDetectionPaused: false });
+      previousImageData = null;
+    },
+
+    pauseChangeDetectionTemporarily: (durationMs = 200) => {
+      const { changeDetectionEnabled } = get();
+      if (!changeDetectionEnabled) return;
+
+      if (temporaryPauseTimer) {
+        clearTimeout(temporaryPauseTimer);
+      }
+
+      set({ isChangeDetectionPaused: true });
+
+      temporaryPauseTimer = setTimeout(() => {
+        set({ isChangeDetectionPaused: false });
+        previousImageData = null;
+        temporaryPauseTimer = null;
+      }, durationMs);
+    },
+  };
+});
+
+const calculateImageDifference = (imageData1, imageData2) => {
+  const data1 = imageData1.data;
+  const data2 = imageData2.data;
+
+  let differentPixels = 0;
+  const totalPixels = imageData1.width * imageData1.height;
+
+  const pixelThreshold = 10;
+
+  for (let i = 0; i < data1.length; i += 4) {
+    const rDiff = Math.abs(data1[i] - data2[i]);
+    const gDiff = Math.abs(data1[i + 1] - data2[i + 1]);
+    const bDiff = Math.abs(data1[i + 2] - data2[i + 2]);
+
+    // If any color channel differs significantly, count as changed
+    if (
+      rDiff > pixelThreshold ||
+      gDiff > pixelThreshold ||
+      bDiff > pixelThreshold
+    ) {
+      differentPixels++;
+    }
+  }
+
+  return (differentPixels / totalPixels) * 100;
+};
+
+const maskPipWindow = (ctx, pipDetails, canvasWidth, canvasHeight) => {
+  if (!pipDetails.isActive || !pipDetails.isVisible) return;
+
+  const screenWidth = window.screen.width;
+  const screenHeight = window.screen.height;
+
+  const scaleX = canvasWidth / screenWidth;
+  const scaleY = canvasHeight / screenHeight;
+
+  ctx.fillStyle = "black";
+  ctx.fillRect(
+    pipDetails.x * scaleX,
+    pipDetails.y * scaleY,
+    pipDetails.width * scaleX,
+    pipDetails.height * scaleY
+  );
+};
+
+const getScaledDimensions = (width, height, maxPixels) => {
+  const currentPixels = width * height;
+  if (currentPixels > maxPixels) {
+    const scaleFactor = Math.sqrt(maxPixels / currentPixels);
+    return {
+      width: Math.floor(width * scaleFactor),
+      height: Math.floor(height * scaleFactor),
+    };
+  }
+  return { width, height };
+};
+
+const detectAndMaskPopup = (data, width, height) => {
+  const maskWidth = Math.floor(width * 0.3);
+  const maskHeight = 100;
+
+  const maskX = Math.floor((width - maskWidth) / 2);
+
+  const maskY = Math.floor(height * 0.85);
+
+  const startX = Math.max(0, maskX);
+  const endX = Math.min(width, maskX + maskWidth);
+  const startY = Math.max(0, maskY);
+  const endY = Math.min(height, startY + maskHeight);
+
+  for (let y = startY; y < endY; y++) {
+    for (let x = startX; x < endX; x++) {
+      const idx = (y * width + x) * 4;
+      data[idx] = 0; // R
+      data[idx + 1] = 0; // G
+      data[idx + 2] = 0; // B
+    }
+  }
+};
+
+export function isScreenShareSupported() {
+  return !!(
+    navigator.mediaDevices &&
+    navigator.mediaDevices.getDisplayMedia
+  );
+}
+
+export async function requestScreenShare() {
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        displaySurface: "monitor",
+        width: 1920,
+        height: 1080,
+      },
+      audio: false,
+    });
+    
+    return stream;
+  } catch (error) {
+    console.error("Error sharing screen:", error);
+    return null;
+  }
+}
